@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>Admin Dashboard</h1>
+        <div id="dashboardData"></div>
+    </div>
+
+    <script>
+        let dashboardData = []; // Local state to hold dashboard data
+        let apartments = []; // Local state to hold apartments
+
+        async function fetchDashboardData() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('No token found, please log in again.');
+                window.location.href = '/login'; // Redirect to login
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/dashboard', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to fetch dashboard data');
+                }
+
+                dashboardData = await response.json(); // Update local state
+                renderDashboard();
+                fetchApartments(); // Fetch apartments after dashboard data
+            } catch (error) {
+                console.error('Error fetching dashboard data:', error);
+                document.getElementById('dashboardData').innerText = 'Error loading dashboard data.';
+            }
+        }
+
+        async function fetchApartments() {
+            const token = localStorage.getItem('token');
+            try {
+                const response = await fetch('/api/apartments', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to fetch apartments');
+                }
+
+                apartments = await response.json(); // Update local state
+            } catch (error) {
+                console.error('Error fetching apartments:', error);
+                alert('Error loading apartments.');
+            }
+        }
+
+        function renderDashboard() {
+            let html = '<h2>Users</h2>';
+            dashboardData.forEach(({ user, payments, maintenanceRequests }) => {
+                html += `
+                    <div class="card mt-3">
+                        <div class="card-body">
+                            <h5 class="card-title">${user.username} (${user.email})</h5>
+                            <p>Rent: $${user.rent}</p>
+                            <p>Apartment: ${user.apartment ? user.apartment.name : 'N/A'}</p>
+
+                            <h6>Assign Apartment</h6>
+                            <select id="apartmentSelect_${user._id}" class="form-control mb-2">
+                                <option value="">Select Apartment</option>
+                                ${apartments.map(apartment => `
+                                    <option value="${apartment._id}">${apartment.apartmentNumber} - ${apartment.buildingName}</option>
+                                `).join('')}
+                            </select>
+                            <button onclick="assignApartment('${user._id}')" class="btn btn-primary">Assign Apartment</button>
+
+                            <h6>Payments</h6>
+                            <ul>
+                                ${payments.map(payment => `
+                                    <li id="payment-${payment._id}">
+                                        ${payment.amount} via ${payment.method} - ${payment.status} (${new Date(payment.createdAt).toLocaleDateString()})
+                                        <button class="btn btn-success btn-sm" onclick="updatePaymentStatus('${payment._id}', 'Approved')">Approve</button>
+                                        <button class="btn btn-warning btn-sm" onclick="updatePaymentStatus('${payment._id}', 'Pending')">Pending</button>
+                                    </li>
+                                `).join('')}
+                            </ul>
+
+                            <h6>Maintenance Requests</h6>
+                            <ul>
+                                ${maintenanceRequests.map(request => `
+                                    <li id="request-${request._id}">
+                                        ${request.description} - ${request.status} (${new Date(request.createdAt).toLocaleDateString()})
+                                        <button class="btn btn-success btn-sm" onclick="updateRequestStatus('${request._id}', 'Done')">Done</button>
+                                        <button class="btn btn-danger btn-sm" onclick="updateRequestStatus('${request._id}', 'Undone')">Undone</button>
+                                    </li>
+                                `).join('')}
+                            </ul>
+
+                            <div>
+                                <input type="number" id="rent_${user._id}" placeholder="Set new rent" class="form-control" />
+                                <button onclick="updateRent('${user._id}')" class="btn btn-primary mt-2">Update Rent</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('dashboardData').innerHTML = html;
+        }
+
+        async function assignApartment(userId) {
+            const apartmentSelect = document.getElementById(`apartmentSelect_${userId}`);
+            const apartmentId = apartmentSelect.value;
+
+            if (!apartmentId) {
+                alert('Please select an apartment to assign.');
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`/api/admin/user/${userId}/apartment`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ apartmentId })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to assign apartment');
+                }
+
+                alert('Apartment assigned successfully');
+                fetchDashboardData(); // Refresh dashboard data
+            } catch (error) {
+                console.error('Error assigning apartment:', error);
+                alert('Error assigning apartment.');
+            }
+        }
+
+        async function updateRent(userId) {
+            const rentInput = document.getElementById(`rent_${userId}`);
+            const newRent = rentInput.value;
+
+            if (!newRent || newRent < 0) {
+                alert('Please enter a valid rent amount.');
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`/api/admin/user/${userId}/rent`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ rent: newRent })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to update rent');
+                }
+
+                alert('Rent updated successfully');
+                fetchDashboardData(); // Refresh dashboard data
+            } catch (error) {
+                console.error('Error updating rent:', error);
+                alert('Error updating rent.');
+            }
+        }
+
+        function updatePaymentStatus(paymentId, status) {
+            dashboardData.forEach(user => {
+                user.payments.forEach(payment => {
+                    if (payment._id === paymentId) {
+                        payment.status = status;
+                        const paymentElement = document.getElementById(`payment-${paymentId}`);
+                        paymentElement.innerHTML = `
+                            ${payment.amount} via ${payment.method} - ${status} (${new Date().toLocaleDateString()})
+                            <button class="btn btn-success btn-sm" onclick="updatePaymentStatus('${paymentId}', 'Approved')">Approve</button>
+                            <button class="btn btn-warning btn-sm" onclick="updatePaymentStatus('${paymentId}', 'Pending')">Pending</button>
+                        `;
+                    }
+                });
+            });
+        }
+
+        function updateRequestStatus(requestId, status) {
+            dashboardData.forEach(user => {
+                user.maintenanceRequests.forEach(request => {
+                    if (request._id === requestId) {
+                        request.status = status;
+                        const requestElement = document.getElementById(`request-${requestId}`);
+                        requestElement.innerHTML = `
+                            ${request.description} - ${status} (${new Date().toLocaleDateString()})
+                            <button class="btn btn-success btn-sm" onclick="updateRequestStatus('${requestId}', 'Done')">Done</button>
+                            <button class="btn btn-danger btn-sm" onclick="updateRequestStatus('${requestId}', 'Undone')">Undone</button>
+                        `;
+                    }
+                });
+            });
+        }
+
+        // Fetch dashboard data on page load
+        fetchDashboardData();
+    </script>
+</body>
+</html>
